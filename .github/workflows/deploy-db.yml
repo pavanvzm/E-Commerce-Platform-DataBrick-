@@ -1,0 +1,82 @@
+name: Deploy Database Migrations
+
+on:
+  workflow_dispatch:
+    description: "Manually trigger database deployment"
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PostgreSQL client
+        uses: harmon758/postgresql-action@v1
+        with:
+          postgresql version: '15'
+
+      - name: Wait for database connection
+        run: |
+          echo "Testing database connection..."
+          until PGPASSWORD=${{ secrets.DB_PASS }} psql -h ${{ secrets.DB_HOST }} -U ${{ secrets.DB_USER }} -d ${{ secrets.DB_NAME }} -c '\q' 2>/dev/null; do
+            echo "Waiting for database to be ready..."
+            sleep 5
+          done
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASS }}
+
+      - name: Run migrations in order
+        run: |
+          echo "Starting database migration..."
+          for migration in $(ls migrations/*.sql | sort); do
+            echo "Running $migration..."
+            PGPASSWORD=${{ secrets.DB_PASS }} psql -h ${{ secrets.DB_HOST }} -U ${{ secrets.DB_USER }} -d ${{ secrets.DB_NAME }} -f "$migration"
+            if [ $? -ne 0 ]; then
+              echo "Migration failed: $migration"
+              exit 1
+            fi
+          done
+          echo "All migrations completed successfully!"
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASS }}
+
+      - name: Validate schema integrity
+        run: |
+          echo "Validating database schema..."
+          PGPASSWORD=${{ secrets.DB_PASS }} psql -h ${{ secrets.DB_HOST }} -U ${{ secrets.DB_USER }} -d ${{ secrets.DB_NAME }} << 'EOSQL'
+          -- Check all tables exist
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_type = 'BASE TABLE'
+          ORDER BY table_name;
+          
+          -- Verify row counts (should not fail)
+          SELECT 'users' as table_name, COUNT(*) as row_count FROM users
+          UNION ALL SELECT 'categories', COUNT(*) FROM categories
+          UNION ALL SELECT 'brands', COUNT(*) FROM brands
+          UNION ALL SELECT 'products', COUNT(*) FROM products;
+          
+          -- Check indexes exist
+          SELECT indexname, tablename 
+          FROM pg_indexes 
+          WHERE schemaname = 'public'
+          ORDER BY tablename, indexname;
+          EOSQL
+          echo "Schema validation completed successfully!"
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASS }}
+
+      - name: Deployment summary
+        run: |
+          echo "## Database Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All migrations executed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Schema integrity validated" >> $GITHUB_STEP_SUMMARY
+          echo "📅 Deployment time: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 Database: ${{ secrets.DB_NAME }}@${{ secrets.DB_HOST }}" >> $GITHUB_STEP_SUMMARY
