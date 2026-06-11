@@ -23,7 +23,49 @@ The schema implements the following entities:
 - `order_items` - Line items within orders
 - `payments` - Payment transaction records
 
-## 🚀 One-Click Deploy
+## 🏗 Database Architecture
+
+### Entity Relationship Diagram (ERD)
+
+```mermaid
+erDiagram
+    USERS ||--o{ ADDRESSES : "has"
+    USERS ||--o{ CARTS : "owns"
+    USERS ||--o{ ORDERS : "places"
+    USERS ||--o{ PAYMENTS : "makes"
+    
+    CARTS ||--|{ CART_ITEMS : "contains"
+    PRODUCTS ||--o{ CART_ITEMS : "added_to"
+    
+    PRODUCTS ||--o{ ORDER_ITEMS : "included_in"
+    ORDERS ||--|{ ORDER_ITEMS : "consists_of"
+    
+    CATEGORIES ||--o{ PRODUCTS : "categorizes"
+    BRANDS ||--o{ PRODUCTS : "manufactures"
+
+    USERS {
+        BIGINT id PK
+        VARCHAR email UK
+        VARCHAR phone UK
+        BOOLEAN is_active
+    }
+    
+    PRODUCTS {
+        BIGINT id PK
+        DECIMAL price
+        BIGINT category_id FK
+        BIGINT brand_id FK
+    }
+    
+    ORDERS {
+        BIGINT id PK
+        BIGINT user_id FK
+        DECIMAL total_amount
+        VARCHAR status
+    }
+```
+
+### Scalability & Design Notes
 
 ### Prerequisites
 
